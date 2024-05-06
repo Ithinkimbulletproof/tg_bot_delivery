@@ -125,7 +125,7 @@ def handle_refuse_callback(call):
     show_hint(user_id)
 
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('ready_'))
+@bot.callback_query_handler(func=lambda call: call.data.startswith('close_'))
 def handle_close_callback(call):
     order_id = call.data.split('_')[-1]
     bot.delete_message(call.message.chat.id, call.message.message_id)
