@@ -25,36 +25,36 @@ cursor = connection.cursor()
 cart = {}
 
 # создание таблиц
-cursor.execute('''CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY,
-        phone TEXT,
-        username TEXT)''')
-
-cursor.execute('''CREATE TABLE IF NOT EXISTS orders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user INTEGER,
-        text TEXT,
-        type TEXT,
-        address TEXT,
-        time TEXT,
-        comment TEXT)''')
-
-cursor.execute('''CREATE TABLE IF NOT EXISTS categories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        description TEXT,
-        photo TEXT)''')
-
-cursor.execute('''CREATE TABLE IF NOT EXISTS items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        category INTEGER,
-        name TEXT,
-        price REAL)''')
-
-cursor.execute("INSERT INTO categories (name, description, photo) VALUES (?, ?, ?)", ("Тестовая категория", "Категория, созданная для теста", "assets/menu placeholder.png", ))
-cursor.execute("INSERT INTO items (category, name, price) VALUES (?, ?, ?)", (1, "Пицца", 100, ))
-cursor.execute("INSERT INTO items (category, name, price) VALUES (?, ?, ?)", (1, "Чай", 200, ))
-connection.commit()
+# cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+#         id INTEGER PRIMARY KEY,
+#         phone TEXT,
+#         username TEXT)''')
+# 
+# cursor.execute('''CREATE TABLE IF NOT EXISTS orders (
+#         id INTEGER PRIMARY KEY AUTOINCREMENT,
+#         user INTEGER,
+#         text TEXT,
+#         type TEXT,
+#         address TEXT,
+#         time TEXT,
+#         comment TEXT)''')
+# 
+# cursor.execute('''CREATE TABLE IF NOT EXISTS categories (
+#         id INTEGER PRIMARY KEY AUTOINCREMENT,
+#         name TEXT,
+#         description TEXT,
+#         photo TEXT)''')
+# 
+# cursor.execute('''CREATE TABLE IF NOT EXISTS items (
+#         id INTEGER PRIMARY KEY AUTOINCREMENT,
+#         category INTEGER,
+#         name TEXT,
+#         price REAL)''')
+# 
+# cursor.execute("INSERT INTO categories (name, description, photo) VALUES (?, ?, ?)", ("Тестовая категория", "Категория, созданная для теста", "assets/menu placeholder.png", ))
+# cursor.execute("INSERT INTO items (category, name, price) VALUES (?, ?, ?)", (1, "Пицца", 100, ))
+# cursor.execute("INSERT INTO items (category, name, price) VALUES (?, ?, ?)", (1, "Чай", 200, ))
+# connection.commit()
 db_lock = Lock()
 
 
