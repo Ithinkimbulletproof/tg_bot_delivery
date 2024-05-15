@@ -3,6 +3,7 @@ from telebot import types
 from collections import Counter
 import sqlite3
 from threading import Lock
+from datetime import datetime, timedelta
 import os
 
 
@@ -16,53 +17,71 @@ def load_tokens():
     return env_vars
 
 
+# часовой пояс
+utc_offset = timedelta(hours=7)
+min_order_time = timedelta(minutes=15)
 env_vars = load_tokens()
 bot = telebot.TeleBot(env_vars.get("TOKEN"))
 channel_id = env_vars.get("CHANNEL")
 connection = sqlite3.connect('bot.db', check_same_thread=False)
 cursor = connection.cursor()
-
 cart = {}
 
 # создание таблиц
-# cursor.execute('''CREATE TABLE IF NOT EXISTS users (
-#         id INTEGER PRIMARY KEY,
-#         phone TEXT,
-#         username TEXT)''')
-# 
-# cursor.execute('''CREATE TABLE IF NOT EXISTS orders (
-#         id INTEGER PRIMARY KEY AUTOINCREMENT,
-#         user INTEGER,
-#         text TEXT,
-#         type TEXT,
-#         address TEXT,
-#         time TEXT,
-#         comment TEXT)''')
-# 
-# cursor.execute('''CREATE TABLE IF NOT EXISTS categories (
-#         id INTEGER PRIMARY KEY AUTOINCREMENT,
-#         name TEXT,
-#         description TEXT,
-#         photo TEXT)''')
-# 
-# cursor.execute('''CREATE TABLE IF NOT EXISTS items (
-#         id INTEGER PRIMARY KEY AUTOINCREMENT,
-#         category INTEGER,
-#         name TEXT,
-#         price REAL)''')
-# 
-# cursor.execute("INSERT INTO categories (name, description, photo) VALUES (?, ?, ?)", ("Тестовая категория", "Категория, созданная для теста", "assets/menu placeholder.png", ))
+cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY,
+        phone TEXT,
+        username TEXT)''')
+
+cursor.execute('''CREATE TABLE IF NOT EXISTS orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user INTEGER,
+        text TEXT,
+        type TEXT,
+        address TEXT,
+        time TEXT,
+        comment TEXT)''')
+
+cursor.execute('''CREATE TABLE IF NOT EXISTS categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        description TEXT,
+        photo TEXT)''')
+
+cursor.execute('''CREATE TABLE IF NOT EXISTS items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category INTEGER,
+        name TEXT,
+        price REAL)''')
+
+# cursor.execute("INSERT INTO categories (name, description, photo) VALUES (?, ?, ?)", ("Тестовая категория", "Категория, созданная для теста", "assets/category_1.jpg", ))
 # cursor.execute("INSERT INTO items (category, name, price) VALUES (?, ?, ?)", (1, "Пицца", 100, ))
 # cursor.execute("INSERT INTO items (category, name, price) VALUES (?, ?, ?)", (1, "Чай", 200, ))
-# connection.commit()
+connection.commit()
 db_lock = Lock()
+
+
+def is_number(number):
+    try:
+        float(number)
+        return True
+    except ValueError:
+        return False
+
+
+def is_valid_time(time):
+    try:
+        datetime.strptime(time, "%H:%M")
+        return True
+    except ValueError:
+        return False
 
 
 def update_cart(user, order):
     if user in cart.keys():
-        cart[user].append(order)
+        cart[user]['text'].append(order)
     else:
-        cart[user] = [order]
+        cart[user] = {'text': [order]}
 
 
 def print_order_info(order_id, user_id=False):
@@ -131,12 +150,18 @@ def admin_message(message):
         send_admin_message(channel_id)
         bot.send_message(chat_id, "Сообщение добавлено в канал")
     else:
-        bot.send_message(message.chat.id, "Простите, я не понимаю вашего сообщения. Пожалуйста, воспользуйтесь предоставленными кнопками или нажмите /start.")
-        execute_db_operation("SELECT * FROM users WHERE id=?", (chat_id,))
-        id, phone, username = cursor.fetchone()
-        contact_markup = telebot.types.InlineKeyboardMarkup()
-        contact_markup.add(telebot.types.InlineKeyboardButton(text=f'Связаться с @{username}', url=f'https://t.me/{username}'))
-        bot.send_message(channel_id, text=f"*Внимание!*\nПользователь @{username} ({phone}) совершил попытку получить доступ к админской панели. Вы знаете этого человека?", reply_markup=contact_markup, parse_mode="Markdown")
+        bot.reply_to(message, "Простите, я не понимаю вашего сообщения. Пожалуйста, воспользуйтесь предоставленными кнопками или нажмите /start.")
+        try:
+            execute_db_operation("SELECT * FROM users WHERE id=?", (chat_id,))
+            id, phone, username = cursor.fetchone()
+            contact_markup = telebot.types.InlineKeyboardMarkup()
+            contact_markup.add(telebot.types.InlineKeyboardButton(text=f'Связаться с @{username}', url=f'https://t.me/{username}'))
+            bot.send_message(channel_id, text=f"*Внимание!*\nПользователь @{username} ({phone}) совершил попытку получить доступ к админской панели. Вы знаете этого человека?", reply_markup=contact_markup, parse_mode="Markdown")
+        except Exception:
+            username = message.from_user.username
+            contact_markup = telebot.types.InlineKeyboardMarkup()
+            contact_markup.add(telebot.types.InlineKeyboardButton(text=f'Связаться с @{username}', url=f'https://t.me/{username}'))
+            bot.send_message(channel_id, text=f"*Внимание!*\nНеавторизованный пользователь @{username} совершил попытку получить доступ к админской панели. Вы знаете этого человека?", reply_markup=contact_markup, parse_mode="Markdown")
 
 
 @bot.message_handler(commands=['start'])
@@ -179,7 +204,7 @@ def handle_close_callback(call):
     bot.delete_message(call.message.chat.id, call.message.message_id)
     user_id, order_info = print_order_info(order_id, user_id=True)
     execute_db_operation("DELETE FROM orders WHERE id = ?", (order_id,))
-    bot.send_message(channel_id, f"Заказ выполнен!{order_info}\n\n{print_user_info(user_id)}", parse_mode="Markdown")
+    bot.send_message(channel_id, f"Заказ выполнен!\n\n{order_info}\n\n{print_user_info(user_id)}", parse_mode="Markdown")
     bot.send_message(user_id, f"Ваш заказ выполнен!\n\n{order_info}", parse_mode="Markdown")
     show_hint(user_id)
 
@@ -207,7 +232,7 @@ def handle_admin_callback(call):
     chat_id = call.from_user.id
     bot.answer_callback_query(callback_query_id=call.id, text="Перейдите в бота, чтобы продолжить работу", show_alert=True)
     admin_markup = telebot.types.InlineKeyboardMarkup(row_width=2)
-    admin_markup.add(telebot.types.InlineKeyboardButton("Добавить категорию", callback_data="add_category"), telebot.types.InlineKeyboardButton("Удалить категорию", callback_data="remove_category"))
+    admin_markup.add(telebot.types.InlineKeyboardButton("Добавить категорию", callback_data="add_category"), telebot.types.InlineKeyboardButton("Удалить категорию", callback_data="remove_category"), telebot.types.InlineKeyboardButton("Добавить товары", callback_data="item_add"), telebot.types.InlineKeyboardButton("Удалить товары", callback_data="item_remove"))
     bot.send_message(chat_id, "Изменение состава меню (только для сотрудников)", reply_markup=admin_markup)
 
 
@@ -248,10 +273,10 @@ def handle_category_picture(message, category_id=None):
             execute_db_operation("UPDATE categories SET photo = ? WHERE id = ?", (f'assets/category_{category_id}.jpg', category_id,))
         continue_markup = types.InlineKeyboardMarkup()
         continue_markup.add(types.InlineKeyboardButton('Закончить', callback_data='end_category'))
-        bot.send_message(message.chat.id, "Фотография успешно сохранена.\nТеперь укажите пункт меню и его цену через точку с запятой (Пример блюда;100.0)", reply_markup=continue_markup)
+        bot.send_message(message.chat.id, "Фотография успешно сохранена. \nТеперь укажите пункт меню и его цену череэ точку с запятой (Пример блюда;100.0). Нажмите кнопку под сообщением, если хотите прекратить добавлять товары", reply_markup=continue_markup)
         bot.register_next_step_handler(message=message, callback=add_category_item, category_id=category_id)
     else:
-        bot.send_message(message.chat.id, "Зачем мне это?")
+        bot.reply_to(message, "Зачем мне это?")
         show_hint(message.chat.id)
 
 
@@ -259,19 +284,22 @@ def add_category_item(message, category_id):
     chat_id = message.chat.id
     item = message.text.split(';')
 
-    if len(item) == 2:
+    if len(item) == 2 and is_number(item[1]):
         execute_db_operation("INSERT INTO items (category, name, price) VALUES (?, ?, ?)", (int(category_id), item[0], float(item[1])))
         continue_markup = types.InlineKeyboardMarkup()
         continue_markup.add(types.InlineKeyboardButton('Закончить', callback_data='end_category'))
-        bot.send_message(chat_id, "Укажите пункт меню и его цену через точку с запятой (Пример блюда;100.0)", reply_markup=continue_markup)
-        bot.register_next_step_handler(message=message, callback=add_category_item, category_id=category_id)
-        return
+        bot.send_message(chat_id, "Укажите пункт меню и его цену череэ точку с запятой (Пример блюда;100.0). Нажмите кнопку под сообщением, если хотите прекратить добавлять товары", reply_markup=continue_markup)
+    else:
+        bot.send_message(chat_id, "Вы ввели некорректное значение. Укажите пункт меню и его цену череэ точку с запятой (пример блюда;100.0)")
+
+    bot.register_next_step_handler(message=message, callback=add_category_item, category_id=category_id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'end_category')
 def handle_end_items(call):
     chat_id = call.message.chat.id
-    bot.send_message(chat_id, "Категория успешно создана")
+    bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="Категория успешно создана")
+    show_hint(chat_id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'remove_category')
@@ -280,30 +308,94 @@ def handle_remove_category_callback(call):
     remove_markup = types.InlineKeyboardMarkup()
     execute_db_operation("SELECT id, name, description FROM categories ORDER BY name asc")
     categories = cursor.fetchall()
-    for category in categories:
-        remove_markup.add(types.InlineKeyboardButton(f'{category[1]} - {category[2]}', callback_data=f'delete_category_{category[0]}'))
-    bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="Выберите категорию, которую хотите удалить", reply_markup=remove_markup)
+    if categories:
+        for category in categories:
+            remove_markup.add(types.InlineKeyboardButton(f'{category[1]} - {category[2]}', callback_data=f'delete_category_{category[0]}'))
+        bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="Выберите категорию, которую хотите удалить", reply_markup=remove_markup)
+    else:
+        bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="Нет категорий")
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('delete_category_'))
 def handle_delete_category_callback(call):
     category_id = call.data.split('_')[-1]
-    os.remove(f"assets/category_{category_id}.jpg")
     execute_db_operation("DELETE FROM categories WHERE id = ?", (category_id,))
     execute_db_operation("DELETE FROM items WHERE category = ?", (category_id,))
+    os.remove(f"assets/category_{category_id}.jpg")
     bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=f"Категория #{category_id} удалена")
     show_hint(call.message.chat.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data in ['item_add', 'item_remove'])
+def handle_item_action(call):
+    chat_id = call.message.chat.id
+    category_markup = types.InlineKeyboardMarkup()
+    execute_db_operation("SELECT id, name, description FROM categories ORDER BY name asc")
+    categories = cursor.fetchall()
+    if call.data == 'item_add':
+        if categories:
+            for category in categories:
+                category_markup.add(types.InlineKeyboardButton(f'{category[1]} - {category[2]}', callback_data=f'category_item_{category[0]}'))
+            bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="Выберите категорию, в которую хотите внести товары", reply_markup=category_markup)
+        else:
+            bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="Нет категорий")
+            show_hint(chat_id)
+    if call.data == 'item_remove':
+        if categories:
+            for category in categories:
+                category_markup.add(types.InlineKeyboardButton(f'{category[1]} - {category[2]}', callback_data=f'remove_item_{category[0]}'))
+            bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="Выберите категорию, из которой хотите удалить товары", reply_markup=category_markup)
+        else:
+            bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="Нет категорий")
+            show_hint(chat_id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('category_item_'))
+def handle_item_add(call):
+    chat_id = call.message.chat.id
+    category_id = call.data.split('_')[-1]
+    continue_markup = types.InlineKeyboardMarkup()
+    continue_markup.add(types.InlineKeyboardButton('Закончить', callback_data='end_category'))
+    bot.edit_message_text(chat_id=chat_id, text="Укажите пункт меню и его цену череэ точку с запятой (Пример блюда;100.0). Нажмите кнопку под сообщением, если хотите прекратить добавлять товары", message_id=call.message.message_id, reply_markup=continue_markup)
+    bot.register_next_step_handler(message=call.message, callback=add_category_item, category_id=category_id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('remove_item_'))
+def handle_item_remove(call):
+    chat_id = call.message.chat.id
+    category_id = call.data.split('_')[-1]
+    items_markup = types.InlineKeyboardMarkup()
+    execute_db_operation("SELECT id, name, price FROM items WHERE category = ?", (category_id,))
+    items = cursor.fetchall()
+    if items:
+        for item in items:
+            items_markup.add(types.InlineKeyboardButton(f'{item[1]} - {item[2]} руб.', callback_data=f'delete_item_{item[0]}'))
+        bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="Выберите пункт меню, который хотите удалить", reply_markup=items_markup)
+    else:
+        bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="Нет товаров")
+        show_hint(chat_id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('delete_item_'))
+def handle_item_delete(call):
+    chat_id = call.message.chat.id
+    item_id = call.data.split('_')[-1]
+    execute_db_operation("DELETE FROM items WHERE id = ?", (item_id,))
+    bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text=f"Товар #{item_id} удален")
+    show_hint(chat_id)
 
 
 def save_phone(message):
     chat_id = message.chat.id
     phone_number = message.text
+    number = ''.join(filter(str.isdigit, phone_number))
 
-    if not phone_number.isdigit():
-        bot.send_message(chat_id, "Пожалуйста, введите корректный номер телефона (только цифры)")
+    if (len(number) != 11) or (number[0] not in ['7', '8']) or (number[1] != '9'):
+        bot.send_message(chat_id, "Пожалуйста, введите корректный номер телефона (Пример: 89999999999)")
         bot.register_next_step_handler(message, save_phone)
         return
 
+    phone_number = "8" + number[1:]
     username = message.from_user.username
     execute_db_operation("INSERT INTO users (id, phone, username) VALUES (?, ?, ?)", (chat_id, phone_number, username))
     show_menu(message)
@@ -349,9 +441,10 @@ def make_order(message, is_redacted=False):
     menu_markup = types.InlineKeyboardMarkup()
     menu_markup.add(telebot.types.InlineKeyboardButton('Завершить заказ', callback_data='finish'))
 
-    for item in categories:
-        id, name, description, photo = item
-        menu_markup.add(types.InlineKeyboardButton(text=name, callback_data=f'category_{id}'))
+    if categories:
+        for item in categories:
+            id, name, description, photo = item
+            menu_markup.add(types.InlineKeyboardButton(text=name, callback_data=f'category_{id}'))
 
     photo = open('assets/menu placeholder.png', 'rb')
     if is_redacted is False:
@@ -373,16 +466,16 @@ def choose_category(call):
     menu_markup.add(telebot.types.InlineKeyboardButton('Назад к меню', callback_data='back'))
     execute_db_operation("SELECT * FROM items WHERE category = ?", (category_id,))
     items = cursor.fetchall()
-    for item in items:
-        if item[1] == int(category_id):
-            menu_markup.add(telebot.types.InlineKeyboardButton(text=f'[{item[3]} руб.] - {item[2]}', callback_data=f'menu_item_{item[0]}'))
+    if items:
+        for item in items:
+            if item[1] == int(category_id):
+                menu_markup.add(telebot.types.InlineKeyboardButton(text=f'[{item[3]} руб.] - {item[2]}', callback_data=f'menu_item_{item[0]}'))
     photo = open(photo, 'rb')
     bot.delete_message(chat_id, call.message.message_id)
-    bot.send_photo(chat_id, photo, caption=f"Категория: *{name}*\n{description}\n\nВыберите свой заказ", parse_mode="Markdown", reply_markup=menu_markup)
-    # if chat_id in cart.keys():
-    #     bot.send_photo(chat_id, photo, caption=f"Категория: *{name}*\n{description}\n\nВыберите свой заказ \n\n{str(print_cart(chat_id))}", parse_mode="Markdown", reply_markup=menu_markup)
-    # else:
-    #     bot.send_photo(chat_id, photo, caption=f"Категория: *{name}*\n{description}\n\nВыберите свой заказ", parse_mode="Markdown", reply_markup=menu_markup)
+    if items:
+        bot.send_photo(chat_id, photo, caption=f"Категория: *{name}*\n{description}\n\nВыберите свой заказ", parse_mode="Markdown", reply_markup=menu_markup)
+    else:
+        bot.send_photo(chat_id, photo, caption=f"Категория: *{name}*\n{description}\n\nВ категории нет товаров", parse_mode="Markdown", reply_markup=menu_markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'back')
@@ -405,9 +498,6 @@ def select_item(call):
 def handle_continue_choice(call):
     chat_id = call.message.chat.id
     if cart and cart[chat_id]:
-        execute_db_operation("INSERT INTO orders (user, text) VALUES (?, ?)", (chat_id, str(cart[chat_id])))
-        if chat_id in cart.keys():
-            cart[chat_id] = []
         markup = types.InlineKeyboardMarkup(row_width=2)
         markup.add(types.InlineKeyboardButton('Самовывоз', callback_data='pickup'), types.InlineKeyboardButton('Доставка', callback_data='delivery'))
         bot.delete_message(call.message.chat.id, call.message.message_id)
@@ -421,13 +511,12 @@ def handle_continue_choice(call):
 @bot.callback_query_handler(func=lambda call: call.data in ['pickup', 'delivery'])
 def handle_delivery_choice(call):
     order_type = 'Самовывоз' if call.data == 'pickup' else 'Доставка'
-    execute_db_operation("SELECT id FROM orders WHERE user = ? ORDER BY id DESC LIMIT 1", (call.message.chat.id,))
-    order_id = cursor.fetchone()[0]
-    execute_db_operation("UPDATE orders SET type = ? WHERE id = ?", (order_type, order_id))
     chat_id = call.message.chat.id
+    cart[chat_id]['type'] = order_type
 
     if order_type == 'Самовывоз':
-        bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="Введите время, в которое хотите забрать заказ:")
+        cart[chat_id]['address'] = None
+        bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="Введите время, в которое хотите забрать заказ (пример: 12:00)")
         bot.register_next_step_handler(call.message, process_time)
     else:
         bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="Введите адрес доставки:")
@@ -436,31 +525,39 @@ def handle_delivery_choice(call):
 
 def process_delivery_address(message):
     address = message.text
-    execute_db_operation("SELECT id FROM orders WHERE user = ? ORDER BY id DESC LIMIT 1", (message.chat.id,))
-    order_id = cursor.fetchone()[0]
-    execute_db_operation("UPDATE orders SET address = ? WHERE id = ?", (address, order_id))
-    bot.send_message(message.chat.id, "Введите время, в которое хотите забрать заказ:")
+    cart[message.chat.id]['address'] = address
+    bot.send_message(message.chat.id, "Введите время, в которое хотите забрать заказ (пример: 12:00)")
     bot.register_next_step_handler(message, process_time)
 
 
 def process_time(message):
     time = message.text
-    execute_db_operation("SELECT id FROM orders WHERE user = ? ORDER BY id DESC LIMIT 1", (message.chat.id,))
-    order_id = cursor.fetchone()[0]
-    execute_db_operation("UPDATE orders SET time = ? WHERE id = ?", (time, order_id))
-    bot.send_message(chat_id=message.chat.id, text="Введите комментарий к заказу (напишите нет, если не нужно)")
-    bot.register_next_step_handler(message, final_order)
+    if is_valid_time(time):
+        current_time_utc = datetime.utcnow() + utc_offset
+        desired_time = datetime.strptime(time, "%H:%M")
+        if (current_time_utc + min_order_time).time() < desired_time.time():
+            cart[message.chat.id]['time'] = time
+            bot.send_message(chat_id=message.chat.id, text="Введите комментарий к заказу (напишите нет, если не нужно)")
+            bot.register_next_step_handler(message, final_order)
+        else:
+            bot.send_message(message.chat.id, f"Время должно быть позже текущего. Пожалуйста, введите корректное время, в которое хотите забрать заказ (позже чем {current_time_utc.strftime('%H:%M')})")
+            bot.register_next_step_handler(message, process_time)
+    else:
+        bot.send_message(message.chat.id, "Пожалуйста, введите корректное время, в которое хотите забрать заказ (пример: 12:00)")
+        bot.register_next_step_handler(message, process_time)
 
 
 def final_order(message):
+    chat_id = message.chat.id
     comment = message.text
-    execute_db_operation("SELECT id FROM orders WHERE user = ? ORDER BY id DESC LIMIT 1", (message.chat.id,))
+    cart[chat_id]['comment'] = comment
+    execute_db_operation("INSERT INTO orders (user, text, type, address, time, comment) VALUES (?, ?, ?, ?, ?, ?)", (str(chat_id), str(cart[chat_id]['text']), cart[chat_id]['type'], cart[chat_id]['address'], cart[chat_id]['time'], str(cart[chat_id]['comment'])))
+    execute_db_operation("SELECT id FROM orders WHERE user = ? ORDER BY id DESC LIMIT 1", (chat_id,))
     order_id = cursor.fetchone()[0]
-    execute_db_operation("UPDATE orders SET comment = ? WHERE id = ?", (comment, order_id))
+    del cart[chat_id]
     markup = types.InlineKeyboardMarkup(row_width=3)
     markup.add(types.InlineKeyboardButton("Сохранить", callback_data=f'save_order_{order_id}'), types.InlineKeyboardButton("Редактировать", callback_data=f'edit_order_{order_id}'), types.InlineKeyboardButton("Отменить", callback_data=f'cancel_order_{order_id}'))
     bot.send_message(message.chat.id, f"Спасибо за заказ! Ваш выбор: \n\n{print_order_info(order_id)}", reply_markup=markup, parse_mode="Markdown")
-    show_hint(message.chat.id)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('edit_order_'))
@@ -488,7 +585,7 @@ def cancel_order(call):
 
 @bot.message_handler(func=lambda message: True)
 def handle_unknown_message(message):
-    bot.send_message(message.chat.id, "Простите, я не понимаю вашего сообщения. Пожалуйста, воспользуйтесь предоставленными кнопками.")
+    bot.reply_to(message, "Простите, я не понимаю вашего сообщения. Пожалуйста, воспользуйтесь предоставленными кнопками.")
 
 
 if __name__ == '__main__':
