@@ -248,7 +248,7 @@ def handle_category_picture(message, category_id=None):
             execute_db_operation("UPDATE categories SET photo = ? WHERE id = ?", (f'assets/category_{category_id}.jpg', category_id,))
         continue_markup = types.InlineKeyboardMarkup()
         continue_markup.add(types.InlineKeyboardButton('Закончить', callback_data='end_category'))
-        bot.send_message(message.chat.id, "Фотография успешно сохранена.\nТеперькажите пункт меню и его цену череэ точку с запятой (Пример блюда;100.0)", reply_markup=continue_markup)
+        bot.send_message(message.chat.id, "Фотография успешно сохранена.\nТеперь укажите пункт меню и его цену через точку с запятой (Пример блюда;100.0)", reply_markup=continue_markup)
         bot.register_next_step_handler(message=message, callback=add_category_item, category_id=category_id)
     else:
         bot.send_message(message.chat.id, "Зачем мне это?")
@@ -263,7 +263,7 @@ def add_category_item(message, category_id):
         execute_db_operation("INSERT INTO items (category, name, price) VALUES (?, ?, ?)", (int(category_id), item[0], float(item[1])))
         continue_markup = types.InlineKeyboardMarkup()
         continue_markup.add(types.InlineKeyboardButton('Закончить', callback_data='end_category'))
-        bot.send_message(chat_id, "Укажите пункт меню и его цену череэ точку с запятой (Пример блюда;100.0)", reply_markup=continue_markup)
+        bot.send_message(chat_id, "Укажите пункт меню и его цену через точку с запятой (Пример блюда;100.0)", reply_markup=continue_markup)
         bot.register_next_step_handler(message=message, callback=add_category_item, category_id=category_id)
         return
 
