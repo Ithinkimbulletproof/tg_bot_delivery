@@ -178,6 +178,17 @@ def start(message):
         show_menu(message)
 
 
+@bot.message_handler(commands=['help'])
+def help(message):
+    chat_id = message.chat.id
+    username = message.from_user.username
+    help_markup = telebot.types.InlineKeyboardMarkup()
+    help_markup.add(telebot.types.InlineKeyboardButton("Обратная связь", url=f'https://t.me/{username}'))
+    bot.send_message(chat_id, "У бота есть 2 комманды:\n/start - сделать заказ. Просто следуйте инструкции, нажимая на кнопки, которые предоставляет бот\n/help - помощь (Вы здесь). Если хотите связаться с представителем компании для обратной связи, нажмите на кнопку под сообщением", reply_markup=help_markup)
+    show_hint(chat_id)
+
+
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith('ready_'))
 def handle_ready_callback(call):
     order_id = call.data.split('_')[-1]
